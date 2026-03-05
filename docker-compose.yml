@@ -19,6 +19,9 @@ services:
       - "${IMMICH_PORT}:${IMMICH_PORT_CONTAINER}"
     volumes:
       - ${IMMICH_UPLOAD_DIR}:/usr/src/app/upload
+    networks:
+      - edge
+      - backend
     restart: unless-stopped
 
   immich-machine-learning:
@@ -28,15 +31,19 @@ services:
       TZ: ${TZ}
     volumes:
       - ${IMMICH_MODEL_CACHE_DIR}:/cache
+    networks:
+      - backend
     restart: unless-stopped
 
   immich-redis:
-    image: redis
+    image: redis:${REDIS_VERSION}
     container_name: immich-redis
+    networks:
+      - backend
     restart: unless-stopped
 
   immich-postgres:
-    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    image: ghcr.io/immich-app/postgres:${IMMICH_POSTGRES_VERSION}
     container_name: immich-postgres
     environment:
       POSTGRES_DB: ${IMMICH_DB_NAME}
@@ -45,10 +52,12 @@ services:
       TZ: ${TZ}
     volumes:
       - ${IMMICH_POSTGRES_DATA_DIR}:/var/lib/postgresql/data
+    networks:
+      - backend
     restart: unless-stopped
 
   syncthing:
-    image: syncthing/syncthing
+    image: syncthing/syncthing:${SYNCTHING_VERSION}
     container_name: syncthing
     environment:
       PUID: ${PUID}
@@ -62,10 +71,12 @@ services:
     volumes:
       - ${SYNCTHING_CONFIG_DIR}:/var/syncthing/config
       - ${SYNCTHING_DATA_DIR}:/var/syncthing/data
+    networks:
+      - edge
     restart: unless-stopped
 
   forgejo:
-    image: data.forgejo.org/forgejo/forgejo:10
+    image: data.forgejo.org/forgejo/forgejo:${FORGEJO_VERSION}
     container_name: forgejo
     depends_on:
       - forgejo-postgres
@@ -85,10 +96,13 @@ services:
       - "${FORGEJO_SSH_PORT}:${FORGEJO_SSH_PORT_CONTAINER}"
     volumes:
       - ${FORGEJO_DATA_DIR}:/data
+    networks:
+      - edge
+      - backend
     restart: unless-stopped
 
   forgejo-postgres:
-    image: postgres
+    image: postgres:${FORGEJO_POSTGRES_VERSION}
     container_name: forgejo-postgres
     environment:
       POSTGRES_DB: ${FORGEJO_DB_NAME}
@@ -97,11 +111,15 @@ services:
       TZ: ${TZ}
     volumes:
       - ${FORGEJO_POSTGRES_DATA_DIR}:/var/lib/postgresql/data
+    networks:
+      - backend
     restart: unless-stopped
 
   headscale:
-    image: headscale/headscale
+    image: headscale/headscale:${HEADSCALE_VERSION}
     container_name: headscale
+    profiles:
+      - local-headscale
     command: serve
     environment:
       TZ: ${TZ}
@@ -111,10 +129,12 @@ services:
       - ${HEADSCALE_DATA_DIR}:/var/lib/headscale
       - ${HEADSCALE_CONFIG_FILE}:/etc/headscale/config.yaml:ro
       - ${HEADSCALE_ACL_FILE}:/etc/headscale/acl.hujson:ro
+    networks:
+      - edge
     restart: unless-stopped
 
   navidrome:
-    image: deluan/navidrome
+    image: deluan/navidrome:${NAVIDROME_VERSION}
     container_name: navidrome
     environment:
       ND_SCANSCHEDULE: ${ND_SCANSCHEDULE}
@@ -127,4 +147,86 @@ services:
     volumes:
       - ${NAVIDROME_DATA_DIR}:/data
       - ${NAVIDROME_MUSIC_DIR}:/music:ro
+    networks:
+      - edge
     restart: unless-stopped
+
+  tailscale-client:
+    image: tailscale/tailscale:${TAILSCALE_VERSION}
+    container_name: tailscale-client
+    profiles:
+      - overlay
+    hostname: ${TS_HOSTNAME}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_EXTRA_ARGS: --login-server=${TS_LOGIN_SERVER} --accept-routes=${TS_ACCEPT_ROUTES} --accept-dns=${TS_ACCEPT_DNS} --advertise-tags=${TS_ADVERTISE_TAGS} --advertise-routes=${EDGE_SUBNET}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - ${TS_STATE_DIR}:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      - edge
+    restart: unless-stopped
+
+  edge-gateway:
+    image: nginx:${NGINX_VERSION}
+    container_name: edge-gateway
+    profiles:
+      - hardened-overlay
+    depends_on:
+      - immich-server
+      - syncthing
+      - forgejo
+      - navidrome
+    volumes:
+      - ${EDGE_GATEWAY_CONFIG_FILE}:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - edge
+      - overlay-hardened
+    restart: unless-stopped
+
+  tailscale-hardened:
+    image: tailscale/tailscale:${TAILSCALE_VERSION}
+    container_name: tailscale-hardened
+    profiles:
+      - hardened-overlay
+    hostname: ${TS_HARDENED_HOSTNAME}
+    depends_on:
+      - edge-gateway
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_EXTRA_ARGS: --login-server=${TS_LOGIN_SERVER} --accept-routes=${TS_ACCEPT_ROUTES} --accept-dns=${TS_ACCEPT_DNS} --advertise-tags=${TS_ADVERTISE_TAGS} --advertise-routes=${HARDENED_OVERLAY_SUBNET}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "false"
+    volumes:
+      - ${TS_HARDENED_STATE_DIR}:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      - overlay-hardened
+    restart: unless-stopped
+
+networks:
+  edge:
+    name: ${EDGE_NETWORK_NAME}
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET}
+  backend:
+    name: ${BACKEND_NETWORK_NAME}
+    internal: true
+    ipam:
+      config:
+        - subnet: ${BACKEND_SUBNET}
+  overlay-hardened:
+    name: ${HARDENED_OVERLAY_NETWORK_NAME}
+    internal: true
+    ipam:
+      config:
+        - subnet: ${HARDENED_OVERLAY_SUBNET}

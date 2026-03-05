@@ -8,6 +8,14 @@ This repo bootstraps the self-hosted stack discussed for Nick:
 - Headscale (self-hosted Tailscale control plane)
 - Navidrome (Subsonic-compatible music server)
 
+## Network Model
+
+- `edge` network: app entry services (Immich, Syncthing, Forgejo, Navidrome)
+- `backend` network (internal): database/cache only (Immich Postgres/Redis, Forgejo Postgres, Immich ML)
+- `overlay-hardened` network (internal): hardened tailnet access path
+
+Only edge services publish host ports. DB/Redis services stay isolated on internal Docker networking.
+
 ## Quick Start
 
 1. Create env file:
@@ -24,6 +32,26 @@ cp .env.example .env
 docker compose up -d
 ```
 
+Optional profiles:
+
+- Direct overlay client (tailnet can reach edge network directly):
+
+```bash
+docker compose --profile overlay up -d
+```
+
+- Hardened overlay (tailnet reaches only `edge-gateway`, which proxies edge services):
+
+```bash
+docker compose --profile hardened-overlay up -d
+```
+
+- Local Headscale control plane (optional dev mode, if not using DO droplet):
+
+```bash
+docker compose --profile local-headscale up -d
+```
+
 4. Open services:
 
 - Immich: `http://localhost:${IMMICH_PORT}`
@@ -34,7 +62,9 @@ docker compose up -d
 
 ## Headscale Bootstrap
 
-Create a user and pre-auth key:
+If using your own Headscale server (for example on a DO droplet), set `TS_LOGIN_SERVER` and `TS_AUTHKEY` in `.env`.
+
+If using the local Headscale profile, create a user and pre-auth key:
 
 ```bash
 docker compose exec headscale headscale users create nick
@@ -52,9 +82,11 @@ Persistent volumes are stored in `./data`:
 - `data/forgejo*`
 - `data/headscale`
 - `data/navidrome/*`
+- `data/tailscale/*`
 
 ## Notes
 
 - `config/headscale/config.yaml` is intentionally minimal for local bootstrap.
-- For real remote client use, front Headscale with HTTPS and set `server_url` to your public URL.
+- For remote client use, front Headscale with HTTPS and set `server_url` to your public URL.
 - Navidrome is included as the Subsonic-compatible default. If you want Gonic instead, we can swap it in.
+- Service image tags are pinned in `.env` to stable/LTS lines (update there when rolling forward).
