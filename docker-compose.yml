@@ -1,0 +1,130 @@
+services:
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION}
+    container_name: immich-server
+    depends_on:
+      - immich-redis
+      - immich-postgres
+    environment:
+      DB_HOSTNAME: immich-postgres
+      DB_PORT: 5432
+      DB_DATABASE_NAME: ${IMMICH_DB_NAME}
+      DB_USERNAME: ${IMMICH_DB_USER}
+      DB_PASSWORD: ${IMMICH_DB_PASSWORD}
+      REDIS_HOSTNAME: immich-redis
+      REDIS_PORT: 6379
+      UPLOAD_LOCATION: /usr/src/app/upload
+      TZ: ${TZ}
+    ports:
+      - "${IMMICH_PORT}:${IMMICH_PORT_CONTAINER}"
+    volumes:
+      - ${IMMICH_UPLOAD_DIR}:/usr/src/app/upload
+    restart: unless-stopped
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION}
+    container_name: immich-ml
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ${IMMICH_MODEL_CACHE_DIR}:/cache
+    restart: unless-stopped
+
+  immich-redis:
+    image: redis
+    container_name: immich-redis
+    restart: unless-stopped
+
+  immich-postgres:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.4.3-pgvectors0.2.0
+    container_name: immich-postgres
+    environment:
+      POSTGRES_DB: ${IMMICH_DB_NAME}
+      POSTGRES_USER: ${IMMICH_DB_USER}
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ${IMMICH_POSTGRES_DATA_DIR}:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  syncthing:
+    image: syncthing/syncthing
+    container_name: syncthing
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    ports:
+      - "${SYNCTHING_UI_PORT}:${SYNCTHING_UI_PORT_CONTAINER}"
+      - "${SYNCTHING_SYNC_TCP_PORT}:${SYNCTHING_SYNC_TCP_PORT_CONTAINER}/tcp"
+      - "${SYNCTHING_SYNC_UDP_PORT}:${SYNCTHING_SYNC_UDP_PORT_CONTAINER}/udp"
+      - "${SYNCTHING_DISCOVERY_UDP_PORT}:${SYNCTHING_DISCOVERY_UDP_PORT_CONTAINER}/udp"
+    volumes:
+      - ${SYNCTHING_CONFIG_DIR}:/var/syncthing/config
+      - ${SYNCTHING_DATA_DIR}:/var/syncthing/data
+    restart: unless-stopped
+
+  forgejo:
+    image: data.forgejo.org/forgejo/forgejo:10
+    container_name: forgejo
+    depends_on:
+      - forgejo-postgres
+    environment:
+      USER_UID: ${PUID}
+      USER_GID: ${PGID}
+      FORGEJO__database__DB_TYPE: postgres
+      FORGEJO__database__HOST: forgejo-postgres:5432
+      FORGEJO__database__NAME: ${FORGEJO_DB_NAME}
+      FORGEJO__database__USER: ${FORGEJO_DB_USER}
+      FORGEJO__database__PASSWD: ${FORGEJO_DB_PASSWORD}
+      FORGEJO__server__SSH_PORT: 22
+      FORGEJO__server__SSH_LISTEN_PORT: 22
+      TZ: ${TZ}
+    ports:
+      - "${FORGEJO_HTTP_PORT}:${FORGEJO_HTTP_PORT_CONTAINER}"
+      - "${FORGEJO_SSH_PORT}:${FORGEJO_SSH_PORT_CONTAINER}"
+    volumes:
+      - ${FORGEJO_DATA_DIR}:/data
+    restart: unless-stopped
+
+  forgejo-postgres:
+    image: postgres
+    container_name: forgejo-postgres
+    environment:
+      POSTGRES_DB: ${FORGEJO_DB_NAME}
+      POSTGRES_USER: ${FORGEJO_DB_USER}
+      POSTGRES_PASSWORD: ${FORGEJO_DB_PASSWORD}
+      TZ: ${TZ}
+    volumes:
+      - ${FORGEJO_POSTGRES_DATA_DIR}:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  headscale:
+    image: headscale/headscale
+    container_name: headscale
+    command: serve
+    environment:
+      TZ: ${TZ}
+    ports:
+      - "${HEADSCALE_PORT}:${HEADSCALE_PORT_CONTAINER}"
+    volumes:
+      - ${HEADSCALE_DATA_DIR}:/var/lib/headscale
+      - ${HEADSCALE_CONFIG_FILE}:/etc/headscale/config.yaml:ro
+      - ${HEADSCALE_ACL_FILE}:/etc/headscale/acl.hujson:ro
+    restart: unless-stopped
+
+  navidrome:
+    image: deluan/navidrome
+    container_name: navidrome
+    environment:
+      ND_SCANSCHEDULE: ${ND_SCANSCHEDULE}
+      ND_LOGLEVEL: info
+      ND_SESSIONTIMEOUT: 24h
+      ND_BASEURL: ""
+      TZ: ${TZ}
+    ports:
+      - "${NAVIDROME_PORT}:${NAVIDROME_PORT_CONTAINER}"
+    volumes:
+      - ${NAVIDROME_DATA_DIR}:/data
+      - ${NAVIDROME_MUSIC_DIR}:/music:ro
+    restart: unless-stopped

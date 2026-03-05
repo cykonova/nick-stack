@@ -1,0 +1,12 @@
+{
+  "groups": {},
+  "tagOwners": {},
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["*"],
+      "dst": ["*:*"]
+    }
+  ]
+}
+
