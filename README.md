@@ -1,6 +1,6 @@
 # Nick Stack (Self-Hosted)
 
-This repo bootstraps the self-hosted stack discussed for Nick:
+This repo bootstraps the Nick approved self-hosted stack:
 
 - Immich (photos/videos)
 - Syncthing (file sync)
