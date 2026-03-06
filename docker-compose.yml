@@ -151,6 +151,24 @@ services:
       - edge
     restart: unless-stopped
 
+  jellyfin:
+    image: jellyfin/jellyfin:10.10.6
+    container_name: jellyfin
+    runtime: nvidia
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      TZ: ${TZ}
+    ports:
+      - "${JELLYFIN_PORT}:8096"
+    volumes:
+      - ${JELLYFIN_CONFIG_DIR}:/config
+      - ${JELLYFIN_CACHE_DIR}:/cache
+      - ${JELLYFIN_MEDIA_DIR}:/media:ro
+    networks:
+      - edge
+    restart: unless-stopped
+
   tailscale-client:
     image: tailscale/tailscale:v1.94.1
     container_name: tailscale-client
@@ -182,6 +200,7 @@ services:
       - syncthing
       - forgejo
       - navidrome
+      - jellyfin
     volumes:
       - ${EDGE_GATEWAY_CONFIG_FILE}:/etc/nginx/conf.d/default.conf:ro
     networks:
